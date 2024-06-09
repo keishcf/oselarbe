@@ -1,0 +1,229 @@
+from typing import Any, Iterable
+from django.db import models
+from django.utils.text import slugify
+import uuid
+from shortuuid.django_fields import ShortUUIDField
+from django.conf import settings
+# from django.contrib.contenttypes.models import ContentType
+# from django.contrib.contenttypes.fields import GenericForeignKey
+
+
+class BusinessManager(models.Manager):
+    def get_queryset(self, *args, **kwargs):
+        queryset = super().get_queryset(*args, **kwargs)
+        queryset = queryset.filter(is_approved=True)
+        return queryset
+
+
+class BusinessProfile(models.Model):
+    id = ShortUUIDField(
+        length=22,
+        max_length=40,
+        alphabet="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-",
+        primary_key=True,
+        editable=False
+    )
+    owner = models.ForeignKey("accounts.BusinessAccount", on_delete=models.CASCADE, related_name='business_profile')
+    parent = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True, related_name='branches')
+    name = models.CharField(max_length=255, unique=True, null=True, blank=True, help_text="The brand name of the business.")
+    slug = models.SlugField(max_length=255, unique=True, editable=False, db_index=True, null=True, blank=True)
+    categories = models.ManyToManyField('BusinessCategory', related_name='businesses', blank=True)
+    description = models.TextField()
+    
+    address = models.CharField(max_length=255, help_text="The street address of the business location.", blank=True, null=True)
+    city = models.CharField(max_length=100, help_text="The city or town where the business is located.")
+    state = models.CharField(max_length=100, help_text="State, District or province where the business is located.")
+    postal_code = models.CharField(max_length=20, help_text="The postal code of the business location.", blank=True, null=True)
+    country = models.CharField(max_length=100, help_text="Country Where your business is located at")
+    
+    # average_rating = models.DecimalField(max_digits=3, decimal_places=2, default=0.00)
+    # total_reviews = models.PositiveIntegerField(default=0)
+
+    is_verified = models.BooleanField(default=False)
+    is_approved = models.BooleanField(default=False)
+    
+    have_branches = models.BooleanField(default=False)
+
+
+    # approved = BusinessManager()
+    objects = models.Manager()
+    
+    def review_count(self):
+        self.reviews.count()
+
+
+    def save(self, *args, **kwargs):
+        if self.name and self.city and self.state and self.country:
+            self.slug = slugify((self.name))
+        return super().save(*args, **kwargs)
+
+    class Meta:
+        verbose_name = 'Business profile'
+        verbose_name_plural = 'Business profiles'
+
+    def __str__(self):
+        if self.name:
+            return self.name
+
+
+class BusinessShortMessage(models.Model):
+    business = models.OneToOneField(BusinessProfile, on_delete=models.CASCADE, related_name='short_message')
+    message = models.CharField(max_length=160, help_text='A short message about the business. This message is displayed on the business profile page.')
+
+    def __str__(self):
+        return f'{self.business.name} short message'
+
+
+class BusinessMedia(models.Model):
+    business = models.OneToOneField(BusinessProfile, on_delete=models.CASCADE, related_name='media')
+    logo = models.ImageField(upload_to='business/logos/', blank=True, null=True)
+    banner = models.ImageField(upload_to='business/banners/', blank=True, null=True)
+
+    def __str__(self):
+        return f'{self.business.name} media'
+
+class BusinessContact(models.Model):
+    business = models.OneToOneField(BusinessProfile, on_delete=models.CASCADE, related_name='contact')
+    phone = models.CharField(max_length=20, help_text='A valid phone number, please. This phone number is used for contact purposes if there is any enquiry.')
+    email = models.EmailField(max_length=255, help_text='A valid email address, please. This email is used for contact purposes if there is any enquiry.')
+    website = models.URLField(max_length=255, blank=True, null=True, help_text='A valid URL make sure to include http:// or https://.')
+
+    def __str__(self):
+        return f'{self.business.name} contact'
+
+class BusinessSocialMedia(models.Model):
+    business = models.ForeignKey(BusinessProfile, related_name='social_media', on_delete=models.CASCADE)
+    name = models.CharField(max_length=100, help_text='The name of the social media platform.')
+    url = models.URLField(max_length=255, help_text='A valid URL make sure to include http:// or https://.')
+
+    def __str__(self):
+        return f'{self.name}'   
+
+class BusinessMapLocation(models.Model):
+    business = models.OneToOneField(BusinessProfile, on_delete=models.CASCADE, related_name='location')
+    latitude = models.DecimalField(max_digits=9, decimal_places=6)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6)
+
+    def __str__(self):
+        return f'{self.address}, {self.city}, {self.state}, {self.postal_code}, {self.country}'
+    
+class BusinessCategory(models.Model):
+    name = models.CharField(max_length=255)
+    parent = models.ForeignKey('self', on_delete=models.CASCADE, related_name='children', null=True, blank=True)
+    # slug = models.SlugField(blank=True)
+    svg_icon = models.FileField(upload_to='category_icons/', null=True, blank=True)
+
+    class Meta:
+        unique_together = ('name', 'parent')
+
+    def __str__(self):
+        return self.name
+
+    # def save(self):
+    #     if self.name:
+    #         self.slug = slugify((self.name))
+    #     return super().save()
+
+    def get_full_path(self):
+        """
+        Returns the full path of categories from root to the current category.
+        """
+        if self.parent:
+            return f'{self.parent.get_full_path()} > {self.name}'
+        return self.name
+    
+class BusinessHours(models.Model):
+
+    DAYS = (
+        ('monday', 'Monday'),
+        ('tuesday', 'Tuesday'),
+        ('wednesday', 'Wednesday'),
+        ('thursday', 'Thursday'),
+        ('friday', 'Friday'),
+        ('saturday', 'Saturday'),
+        ('sunday', 'Sunday'),
+    )
+
+    business = models.ForeignKey(BusinessProfile, on_delete=models.CASCADE, related_name='hours')
+    day = models.CharField(max_length=10, choices=DAYS)
+    opening = models.TimeField()
+    closing = models.TimeField()
+
+    def __str__(self):
+        return f'{self.business.name} hours'
+
+
+class BusinessQuestionManager(models.Manager):
+    pass
+    
+class BusinessQuestions(models.Model):
+    asker = models.ForeignKey('accounts.PersonalAccount', on_delete=models.CASCADE, related_name='asked_questions')
+    business = models.ForeignKey(BusinessProfile, on_delete=models.CASCADE, related_name='questions')
+    question = models.CharField(max_length=500)
+    created = models.DateTimeField(auto_now_add=True)
+    
+    def __str__(self) -> str:
+        return f"Question by {self.user.get_full_name()} on {self.business.name}"
+    
+class BusinessAnswer(models.Model):
+    # answ
+    question = models.ForeignKey('BusinessQuestions', on_delete=models.CASCADE, related_name="answer")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    text = models.TextField()
+    date_posted = models.DateTimeField(auto_now_add=True)
+    
+    def __str__(self):
+        return f"Answer by {self.user.get_full_name()} on {self.question.text[:30]}"
+    
+    
+    
+    
+# Reviews and Ratings
+class BusinessReview(models.Model):
+    business = models.ForeignKey(BusinessProfile, on_delete=models.CASCADE, related_name='reviews')
+    user = models.ForeignKey('accounts.PersonalAccount', on_delete=models.CASCADE, related_name='reviews')
+    rating = models.PositiveSmallIntegerField()
+    title = models.CharField(max_length=100, help_text="Title your review")
+    review = models.TextField()
+    date_posted = models.DateTimeField(auto_now_add=True)
+    
+    def __str__(self):
+        return f"Review by {self.user.get_full_name()} for {self.business.name}"
+
+class ReplyReview(models.Model):
+    review = models.ForeignKey(BusinessReview, on_delete=models.CASCADE, related_name='replies')
+    owner = models.ForeignKey('accounts.BusinessAccount', on_delete=models.CASCADE)
+    reply = models.TextField()
+    date_posted = models.DateTimeField(auto_now_add=True)
+    
+    @property
+    def likes_count(self):
+        return self.thumbsup.count()
+    
+    def __str__(self):
+        return f"Reply by {self.owner.get_full_name()} to review {self.review.id}"
+    
+    def save(self, *args, **kwargs):
+        if self.owner != self.review.business.owner:
+            raise PermissionError('Only the business owner can reply to they business profile reviews.')
+        else:
+            return super().save(*args, **kwargs)
+
+class ReviewThumbsUp(models.Model):
+    review = models.ForeignKey(BusinessReview, on_delete=models.CASCADE, related_name='thumbsup')
+    user = models.ForeignKey('accounts.PersonalAccount', on_delete=models.CASCADE, related_name='thumbsup_reviews')
+    created= models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('review', 'user')
+
+    def __str__(self):
+        return f"{self.user.get_full_name()} liked review {self.review.id}"
+
+    
+# class ReportReviewOrReply(models.Model):
+#     id = models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True)
+#     review = models.ForeignKey(BusinessReview, on_delete=models.CASCADE, related_name='reports')
+#     reply = models.ForeignKey(ReplyReview, on_delete=models.CASCADE, related_name='reports')
+#     reason = models.TextField()
+#     created = models.DateTimeField(auto_now_add=True)
