@@ -43,23 +43,29 @@ class BusinessProfile(models.Model):
     is_approved = models.BooleanField(default=False)
     
     have_branches = models.BooleanField(default=False)
+    
+    @property
+    def get_location(self):
+        return f"{self.city} {self.state}, {self.country}"
+        
+    @property
+    def reviews_count(self):
+        return self.reviews.count()
 
 
     # approved = BusinessManager()
     objects = models.Manager()
-    
-    def review_count(self):
-        self.reviews.count()
 
 
     def save(self, *args, **kwargs):
         if self.name and self.city and self.state and self.country:
-            self.slug = slugify((self.name))
+            self.slug = slugify((self.name, self.city, self.state, self.country))
         return super().save(*args, **kwargs)
 
     class Meta:
         verbose_name = 'Business profile'
         verbose_name_plural = 'Business profiles'
+        # unique_together = ('name', 'review')
 
     def __str__(self):
         if self.name:
@@ -182,10 +188,18 @@ class BusinessAnswer(models.Model):
 class BusinessReview(models.Model):
     business = models.ForeignKey(BusinessProfile, on_delete=models.CASCADE, related_name='reviews')
     user = models.ForeignKey('accounts.PersonalAccount', on_delete=models.CASCADE, related_name='reviews')
-    rating = models.PositiveSmallIntegerField()
+    rating = models.PositiveSmallIntegerField(help_text="Rate the business from 1 to 5 stars.", default=0)
     title = models.CharField(max_length=100, help_text="Title your review")
     review = models.TextField()
-    date_posted = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ('-created_at',)
+    
+    @property
+    def helpful_count(self):
+        return self.user.reactions.filter(user=self.user, helpful=True).count()
     
     def __str__(self):
         return f"Review by {self.user.get_full_name()} for {self.business.name}"
@@ -196,10 +210,6 @@ class ReplyReview(models.Model):
     reply = models.TextField()
     date_posted = models.DateTimeField(auto_now_add=True)
     
-    @property
-    def likes_count(self):
-        return self.thumbsup.count()
-    
     def __str__(self):
         return f"Reply by {self.owner.get_full_name()} to review {self.review.id}"
     
@@ -209,16 +219,40 @@ class ReplyReview(models.Model):
         else:
             return super().save(*args, **kwargs)
 
-class ReviewThumbsUp(models.Model):
-    review = models.ForeignKey(BusinessReview, on_delete=models.CASCADE, related_name='thumbsup')
-    user = models.ForeignKey('accounts.PersonalAccount', on_delete=models.CASCADE, related_name='thumbsup_reviews')
-    created= models.DateTimeField(auto_now_add=True)
 
+class ReviewHelpful(models.Model):
+    user = models.ForeignKey('accounts.PersonalAccount', on_delete=models.CASCADE)
+    review = models.ForeignKey(BusinessReview, on_delete=models.CASCADE)
+    helpful = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
     class Meta:
-        unique_together = ('review', 'user')
-
+        unique_together = ('user', 'review')
+        
     def __str__(self):
-        return f"{self.user.get_full_name()} liked review {self.review.id}"
+        return f"{self.get_reaction_display()} reaction on {self.review}"
+    
+# class Event(models.Model):
+#     business = models.ForeignKey(BusinessProfile, on_delete=models.CASCADE)
+#     name = models.CharField(max_length=255)
+#     description = models.TextField()
+#     start_time = models.DateTimeField()
+#     end_time = models.DateTimeField()
+#     location = models.CharField(max_length=255)
+#     created_at = models.DateTimeField(auto_now_add=True)
+#     updated_at = models.DateTimeField(auto_now=True)
+#     image = models.ImageField(upload_to='event_images/', blank=True, null=True)
+
+# class Promotion(models.Model):
+#     business = models.ForeignKey(BusinessProfile, on_delete=models.CASCADE)
+#     title = models.CharField(max_length=255)
+#     description = models.TextField()
+#     discount = models.DecimalField(max_digits=5, decimal_places=2)
+#     start_date = models.DateField()
+#     end_date = models.DateField()
+#     terms_and_conditions = models.TextField(blank=True)
+#     created_at = models.DateTimeField(auto_now_add=True)
+#     updated_at = models.DateTimeField(auto_now=True)
 
     
 # class ReportReviewOrReply(models.Model):

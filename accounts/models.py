@@ -8,6 +8,7 @@ from authemail.models import EmailAbstractUser, EmailUserManager
 from django.core.exceptions import ValidationError
 from django.urls import reverse
 from django.utils.functional import cached_property
+from business.models import ReviewHelpful, BusinessReview
 
 
 
@@ -92,16 +93,39 @@ class PersonalAccount(User):
     
 
 class PersonalProfile(models.Model):
+    
+    # class CountryChoice(models.TextChoices):
+    
+    COUNTRY_CHOICES = (
+        ('UG', 'Uganda'),
+        ('TZ', 'Tanzania'),
+        ('KE', 'Kenya'),
+        ('RW', 'Rwanda'),
+        ('BI', 'Burundi'),
+        ('ZA', 'South Africa'),
+        ('NG', 'Nigeria'),
+        ('GH', 'Ghana'),
+        ('EG', 'Egypt'),
+        ('MA', 'Morocco'),
+        ('ML', 'Mali'),
+        ('CI', 'Ivory Coast'),
+        ('MZ', 'Mozambique'),
+        ('ER', 'Eritrea'),
+        ('SD', 'Sudan'),
+        ('ET', 'Ethiopia'),
+        ('SO', 'Somalia'),
+    )
+    
     user = models.OneToOneField(PersonalAccount, on_delete=models.CASCADE, related_name='profile', primary_key=True, editable=False, db_index=True)
     profile_picture = models.ImageField('Profile picture', upload_to='profile_pictures/', null=True, blank=True, help_text='Upload a profile picture')
-    bio = models.TextField('Bio', null=True, blank=True, help_text='A short description about yourself')
-    date_of_birth = models.DateField('Date of birth', null=True, blank=True, help_text='Your date of birth')
-    nickname = models.CharField('Nickname', max_length=30, null=True, blank=True, help_text='Your nickname')
-    headline = models.CharField('Headline', max_length=100, null=True, blank=True, help_text='A short headline about yourself')
-    hometown = models.CharField('Hometown', max_length=100, null=True, blank=True, help_text='Your hometown')
-    primary_language = models.CharField('Primary language', max_length=100, null=True, blank=True)
+    bio = models.CharField('Bio', max_length=200,  null=True, blank=True, help_text='A short description about yourself')
+    phone = models.CharField('Phone', max_length=20, null=True, blank=True, help_text='Your phone number')
+    hometown = models.CharField('Hometown', max_length=30, null=True, blank=True, help_text='Your hometown')
+    primary_language = models.CharField('Primary language', max_length=20, null=True, blank=True)
     web_url = models.URLField('Web URL', null=True, blank=True, help_text='Your website URL')
-    country = models.CharField('Country', max_length=100, null=True, blank=True, help_text='Your country')
+    # followers = models.ManyToManyField(PersonalAccount, related_name='following', symmetrical=False)
+    # favorite_businesses = models.ManyToManyField('BusinessProfile', related_name='favorited_by')
+    country = models.CharField('Country', max_length=200, choices=COUNTRY_CHOICES, null=True, blank=True, help_text='Your country')
     
     # favoriting = models.ManyToManyField("business.BusinessProfile", related_name='Favorite', blank=True)
     
@@ -111,8 +135,12 @@ class PersonalProfile(models.Model):
             return f'{self.user.get_full_name()}'
     
     @property
-    def thumbsup_count(self):
-        self.user.thumbsup_reviews.count()
+    def helpful_count(self):
+        return self.user.reactions.filter(user=self.user, helpful=True).count()
+    
+    @property
+    def reviews_count(self):
+        return self.user.reviews.count()
     
     class Meta:
         verbose_name = 'Personal profile'
@@ -124,23 +152,23 @@ class PersonalProfile(models.Model):
 
 
 
-# class Favorite(models.Model):
-#     from_personal = models.ForeignKey('accounts.PersonalAccount', on_delete=models.CASCADE, related_name='favorites')
-#     to_business = models.ForeignKey("business.BusinessProfile", on_delete=models.CASCADE, related_name='favorited')
-#     date_added = models.DateTimeField(auto_now_add=True)
+class FavoriteBusiness(models.Model):
+    personal = models.ForeignKey('accounts.PersonalAccount', on_delete=models.CASCADE, related_name='favorites')
+    business = models.ForeignKey("business.BusinessProfile", on_delete=models.CASCADE, related_name='favorite_of')
+    date_added = models.DateTimeField(auto_now_add=True)
     
-#     class Meta:
-#         unique_together = ('from_personal', 'to_business')
+    class Meta:
+        unique_together = ('personal', 'business')
         
-#     def save(self, *args, **kwargs):
-#         if not isinstance(self.follower, PersonalAccount):
-#             raise ValidationError("Only personal accounts can follow business profiles.")
-#         if not isinstance(self.following.business_account, BusinessAccount):
-#             raise ValidationError("Can only follow business profiles associated with business accounts.")
-#         super().save(*args, **kwargs)
+    # def save(self, *args, **kwargs):
+    #     if not isinstance(self.personal, PersonalAccount):
+    #         raise ValidationError("Only personal accounts can follow business profiles.")
+    #     if not isinstance(self.following.business_account, BusinessAccount):
+    #         raise ValidationError("Can only follow business profiles associated with business accounts.")
+    #     super().save(*args, **kwargs)
     
-#     def __str__(self):
-#         return f"{self.from_personal.email} favorite {self.to_business.name}"
+    def __str__(self):
+        return f"{self.personal.email} favorite {self.business.name}"
 
 
 
@@ -238,51 +266,51 @@ class BusinessAccount(User):
 
 
 
-# class CollectionManager(models.Manager):
-#     def get_queryset(self, *args, **kwargs):
-#         queryset = super().get_queryset(*args, **kwargs)
-#         queryset = queryset.filter(public=True)
-#         return queryset
+class CollectionManager(models.Manager):
+    def get_queryset(self, *args, **kwargs):
+        queryset = super().get_queryset(*args, **kwargs)
+        queryset = queryset.filter(public=True)
+        return queryset
     
-#     def get_user_collections(self, user):
-#         return self.filter(user=user)
+    def get_user_collections(self, user):
+        return self.filter(user=user)
     
-#     def get_private_collections(self, user):
-#         return self.filter(user=user, public=False)
+    def get_private_collections(self, user):
+        return self.filter(user=user, public=False)
 
-# class Collection(models.Model):
-#     id = ShortUUIDField(
-#         length=18,
-#         max_length=40,
-#         alphabet="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-",
-#         primary_key=True,
-#         editable=False,
-#     )
-#     user = models.ForeignKey(PersonalAccount, on_delete=models.CASCADE, related_name='collection', editable=False)
-#     slug = models.SlugField('Slug', max_length=255, unique=True, editable=False, db_index=True, null=True, blank=True)
-#     name = models.CharField('Name', max_length=100, null=True, blank=True, help_text='Name of the collection')
-#     description = models.TextField('Description', null=True, blank=True, help_text='Description of the collection')
-#     date_created = models.DateTimeField('Date created', auto_now_add=True)
-#     public = models.BooleanField('Public', default=True, help_text='Public or private collection')
-#     businesses = models.ManyToManyField(BusinessProfile, related_name='collections', blank=True)
+class Collection(models.Model):
+    id = ShortUUIDField(
+        length=18,
+        max_length=40,
+        alphabet="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-",
+        primary_key=True,
+        editable=False,
+    )
+    user = models.ForeignKey(PersonalAccount, on_delete=models.CASCADE, related_name='collection')
+    slug = models.SlugField('Slug', max_length=255, unique=True, editable=False, db_index=True, null=True, blank=True)
+    name = models.CharField('Name', max_length=100, null=True, blank=True, help_text='Name of the collection')
+    description = models.TextField('Description', null=True, blank=True, help_text='Description of the collection')
+    date_created = models.DateTimeField('Date created', auto_now_add=True)
+    public = models.BooleanField('Public', default=True, help_text='Public or private collection')
+    businesses = models.ManyToManyField('business.BusinessProfile', related_name='collections', blank=True)
     
-#     class Meta:
-#         verbose_name = 'Collection'
-#         verbose_name_plural = 'Collections'
-#         indexes = [
-#             models.Index(fields=['slug']),
-#             models.Index(fields=['id'])
-#         ]
+    class Meta:
+        verbose_name = 'Collection'
+        verbose_name_plural = 'Collections'
+        indexes = [
+            models.Index(fields=['slug']),
+            models.Index(fields=['id'])
+        ]
     
-#     def save(self, *args, **kwargs):
-#         if not self.slug:
-#             self.slug = slugify(self.name)
-#         super().save(*args, **kwargs)
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = slugify(self.name)
+        super().save(*args, **kwargs)
     
-#     def get_absolute_url(self):
-#         return reverse("collection-detail", kwargs={"pk": self.pk, "slug": self.slug})
+    def get_absolute_url(self):
+        return reverse("collection-detail", kwargs={"pk": self.pk, "slug": self.slug})
     
     
-#     def __str__(self):
-#         return f'{self.name} by {self.user.username}'
+    def __str__(self):
+        return f'{self.name} by {self.user.get_full_name}'
     

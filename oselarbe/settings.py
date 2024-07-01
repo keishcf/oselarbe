@@ -61,12 +61,12 @@ MIDDLEWARE = [
     'django.middleware.locale.LocaleMiddleware',
 ]
 
-if not DEBUG:
-    CORS_ALLOWED_ORIGINS = [
-        'http://localhost:4200',
-    ]
-else:
-    CORS_ALLOW_ALL_ORIGINS =True
+# if not DEBUG:
+#     CORS_ALLOWED_ORIGINS = [
+#         'http://localhost:4200',
+#     ]
+# else:
+CORS_ALLOW_ALL_ORIGINS =True
 
 ROOT_URLCONF = 'oselarbe.urls'
 
@@ -106,6 +106,7 @@ REST_FRAMEWORK = {
         # 'rest_framework.authentication.BasicAuthentication',
         'rest_framework.authentication.TokenAuthentication',
     ],
+    # 'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination', 
     # 'DEFAULT_PERMISSION_CLASSES': [
     #     'rest_framework.permissions.IsAuthenticated',
     # ]
@@ -163,6 +164,10 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.0/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_DIR = BASE_DIR / 'static'
+MEDIA_DIR = BASE_DIR / 'media'
+MEDIA_ROOT = MEDIA_DIR
+MEDIA_URL = '/media/'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.0/ref/settings/#default-auto-field
