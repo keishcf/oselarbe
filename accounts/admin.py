@@ -19,3 +19,4 @@ admin.site.register(pa_models.PersonalLocation)
 admin.site.register(pa_models.PersonalSocial)
 admin.site.register(pa_models.FavoriteBusiness)
 admin.site.register(pa_models.Collection)
+

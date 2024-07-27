@@ -6,7 +6,11 @@ import business.models as biz_models
 def create_profile_media(sender, instance, created, **kwargs):
     if created:
         biz_models.BusinessMedia.objects.create(business=instance)
+        biz_models.BusinessContact.objects.create(business=instance)
+        # biz_models.BusinessShortMessage.objects.create(business=instance)
 
 @receiver(post_save, sender=biz_models.BusinessProfile)
 def save_profile_media(sender, instance, **kwargs):
     instance.media.save()
+    instance.contact.save()
+    # instance.message.save()

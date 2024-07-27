@@ -203,6 +203,7 @@ class PersonalProfileAccountViewSet(viewsets.GenericViewSet):
     def user_reviews(self, request, pk=None):
         user = get_object_or_404(PersonalAccount, id=pk)
         reviews = user.reviews.all()
+
         # Apply pagination
         page = self.paginate_queryset(reviews)
         if page is not None:
@@ -285,54 +286,7 @@ class PersonalProfileAccountViewSet(viewsets.GenericViewSet):
             "totalReviewsNumber": user.profile.reviews_count,
             "reactions": {
                 "helpful": user.profile.helpful_count,
-                
             }
             
         }
-        return Response(result, status=status.HTTP_200_OK)     
-    
-class ReviewViewSet(viewsets.GenericViewSet):
-    permission_classes = (permissions.IsAuthenticated,)
-    serializer_class = biz_serializers.BusinessReviewSerializer
-        
-    def get_object(self):
-        return get_object_or_404(biz_models.BusinessReview, user__id=self.request.user.id)
-    
-    def get_queryset(self):
-        return biz_models.BusinessReview.objects.all()
-
-    def list(self, request, *args, **kwargs):
-        queryset = self.get_queryset()
-        serializer = self.get_serializer(queryset, many=True, context={'request': request})
-        return Response(serializer.data)
-    
-    def create(self, request):
-        serializer = self.serializer_class(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        serializer.save(user=request.user)
-    
-    def update(self, request, *args, **kwargs):
-        instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(serializer.data)
-    
-    @action(detail=True, methods=HTTPMethod.POST)
-    def mark_helpful(self, request, *args, **kwargs):
-        review = self.get_object()
-        user = request.user
-
-        # Check if the user has already marked this review as helpful
-        helpful_instance, created = biz_models.ReviewHelpful.objects.get_or_create(user=user, review=review)
-
-        if created or not helpful_instance.marked_helpful:
-            helpful_instance.marked_helpful = True
-            helpful_instance.save()
-            return Response({'status': 'Marked as helpful'})
-        else:
-            return Response({'status': 'Already marked as helpful'})
-        
-    
-        
-        
+        return Response(result, status=status.HTTP_200_OK)

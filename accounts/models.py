@@ -126,6 +126,7 @@ class PersonalProfile(models.Model):
     # followers = models.ManyToManyField(PersonalAccount, related_name='following', symmetrical=False)
     # favorite_businesses = models.ManyToManyField('BusinessProfile', related_name='favorited_by')
     country = models.CharField('Country', max_length=200, choices=COUNTRY_CHOICES, null=True, blank=True, help_text='Your country')
+    reputation = models.BigIntegerField(default=0)
     
     # favoriting = models.ManyToManyField("business.BusinessProfile", related_name='Favorite', blank=True)
     
@@ -141,6 +142,13 @@ class PersonalProfile(models.Model):
     @property
     def reviews_count(self):
         return self.user.reviews.count()
+    
+    def calculate_reputation(self):
+        # This is a simple calculation, you can make it more complex
+        base_rep = self.reviews_count * 10
+        bonus_rep = self.helpful_count * 5
+        self.reputation = base_rep + bonus_rep
+        self.save()
     
     class Meta:
         verbose_name = 'Personal profile'

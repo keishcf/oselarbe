@@ -11,6 +11,7 @@ admin.site.register(biz_models.BusinessReview)
 admin.site.register(biz_models.ReviewHelpful)
 admin.site.register(biz_models.BusinessQuestions)
 admin.site.register(biz_models.BusinessMedia)
+admin.site.register(biz_models.BusinessContact)
 
 
 

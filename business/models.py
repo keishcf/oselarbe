@@ -4,6 +4,7 @@ from django.utils.text import slugify
 import uuid
 from shortuuid.django_fields import ShortUUIDField
 from django.conf import settings
+from django.utils import timezone
 # from django.contrib.contenttypes.models import ContentType
 # from django.contrib.contenttypes.fields import GenericForeignKey
 
@@ -13,7 +14,6 @@ class BusinessManager(models.Manager):
         queryset = super().get_queryset(*args, **kwargs)
         queryset = queryset.filter(is_approved=True)
         return queryset
-
 
 class BusinessProfile(models.Model):
     id = ShortUUIDField(
@@ -28,7 +28,7 @@ class BusinessProfile(models.Model):
     name = models.CharField(max_length=255, unique=True, null=True, blank=True, help_text="The brand name of the business.")
     slug = models.SlugField(max_length=255, unique=True, editable=False, db_index=True, null=True, blank=True)
     categories = models.ManyToManyField('BusinessCategory', related_name='businesses', blank=True)
-    description = models.TextField()
+    description = models.TextField()    
     
     address = models.CharField(max_length=255, help_text="The street address of the business location.", blank=True, null=True)
     city = models.CharField(max_length=100, help_text="The city or town where the business is located.")
@@ -44,6 +44,9 @@ class BusinessProfile(models.Model):
     
     have_branches = models.BooleanField(default=False)
     
+    def get_average_rating(self):
+        return self.objects.reviews.filter()
+    
     @property
     def get_location(self):
         return f"{self.city} {self.state}, {self.country}"
@@ -51,7 +54,6 @@ class BusinessProfile(models.Model):
     @property
     def reviews_count(self):
         return self.reviews.count()
-
 
     # approved = BusinessManager()
     objects = models.Manager()
@@ -71,13 +73,36 @@ class BusinessProfile(models.Model):
         if self.name:
             return self.name
 
-
-class BusinessShortMessage(models.Model):
-    business = models.OneToOneField(BusinessProfile, on_delete=models.CASCADE, related_name='short_message')
-    message = models.CharField(max_length=160, help_text='A short message about the business. This message is displayed on the business profile page.')
+class BusinessSubscription(models.Model):
+    business = models.OneToOneField(BusinessProfile, on_delete=models.CASCADE, related_name='subscription')
+    subscribed = models.BooleanField(default=False)
 
     def __str__(self):
-        return f'{self.business.name} short message'
+        return f"{self.business.name} - {'Subscribed' if self.subscribed else 'Unsubscribed'}"
+
+class BusinessServices(models.Model):
+    business = models.ForeignKey(BusinessProfile, on_delete=models.CASCADE, related_name='services')
+    name = models.CharField(max_length=155)
+    
+    
+    def __str__(self) -> str:
+        return f"{self.name} ({self.business.name})"
+    
+    def save(self, *args, **kwargs):
+        if not self.business.subscription.subscribed:
+            service_count = BusinessServices.objects.filter(business=self.business).count()
+            if service_count >= 5:
+                raise ValueError("Unsubscribed businesses can only have up to 5 services.")
+        super(BusinessServices, self).save(*args, **kwargs)
+    
+    
+
+# class BusinessShortMessage(models.Model):
+#     business = models.OneToOneField(BusinessProfile, on_delete=models.CASCADE, related_name='short_message')
+#     message = models.CharField(max_length=160, help_text='A short message about the business. This message is displayed on the business profile page.')
+
+#     def __str__(self):
+#         return f'{self.business.name} short message'
 
 
 class BusinessMedia(models.Model):
@@ -90,12 +115,14 @@ class BusinessMedia(models.Model):
 
 class BusinessContact(models.Model):
     business = models.OneToOneField(BusinessProfile, on_delete=models.CASCADE, related_name='contact')
+
     phone = models.CharField(max_length=20, help_text='A valid phone number, please. This phone number is used for contact purposes if there is any enquiry.')
     email = models.EmailField(max_length=255, help_text='A valid email address, please. This email is used for contact purposes if there is any enquiry.')
     website = models.URLField(max_length=255, blank=True, null=True, help_text='A valid URL make sure to include http:// or https://.')
+    
+    def __str__(self) -> str:
+        return f"{self.business.name} contacts"
 
-    def __str__(self):
-        return f'{self.business.name} contact'
 
 class BusinessSocialMedia(models.Model):
     business = models.ForeignKey(BusinessProfile, related_name='social_media', on_delete=models.CASCADE)
@@ -186,6 +213,13 @@ class BusinessAnswer(models.Model):
     
 # Reviews and Ratings
 class BusinessReview(models.Model):
+    id = ShortUUIDField(
+        length=32,
+        max_length=40,
+        alphabet="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-",
+        primary_key=True,
+        editable=False
+    )
     business = models.ForeignKey(BusinessProfile, on_delete=models.CASCADE, related_name='reviews')
     user = models.ForeignKey('accounts.PersonalAccount', on_delete=models.CASCADE, related_name='reviews')
     rating = models.PositiveSmallIntegerField(help_text="Rate the business from 1 to 5 stars.", default=0)
@@ -196,10 +230,66 @@ class BusinessReview(models.Model):
     
     class Meta:
         ordering = ('-created_at',)
+        
+        
+    @classmethod
+    def get_weighted_average(cls, business):
+        reviews = cls.objects.filter(business=business)
+        weighted_sum = 0
+        total_weight = 0
+        
+        for review in reviews:
+            time_weight = cls.get_time_weight(review.created_at)
+            user_weight = cls.get_user_weight(review.user)
+            
+            weight = (time_weight + user_weight) / 2
+            
+            weighted_sum += review.rating * weight
+            total_weight += weight
+        
+        return weighted_sum / total_weight if total_weight else 0
+    
+    def save(self, *args, **kwargs):
+        is_new = self.pk is None
+        if is_new:
+            self.user.profile.calculate_reputation()
+        return super().save()
+
+    
+    
+    
+        # static Methods
+    @staticmethod
+    def get_time_weight(review_date):
+        age = timezone.now() - review_date
+        if age <= timezone.timedelta(days=30):
+            return 1.5
+        elif age <= timezone.timedelta(days=90):
+            return 1.2
+        elif age <= timezone.timedelta(days=180):
+            return 1.0
+        else:
+            return 0.8
+
+    @staticmethod
+    def get_user_weight(user):
+        if user.profile.reputation >= 1000:
+            return 1.5
+        elif user.profile.reputation >= 500:
+            return 1.2
+        elif user.profile.reputation >= 100:
+            return 1.0
+        else:
+            return 0.8
+    
+    
+    @property 
+    def helpful_count(self):
+        return self.reactions.filter(helpful=True).count()
     
     @property
-    def helpful_count(self):
-        return self.user.reactions.filter(user=self.user, helpful=True).count()
+    def reviews_count(self):
+        return self.reviews.count()
     
     def __str__(self):
         return f"Review by {self.user.get_full_name()} for {self.business.name}"
@@ -221,8 +311,8 @@ class ReplyReview(models.Model):
 
 
 class ReviewHelpful(models.Model):
-    user = models.ForeignKey('accounts.PersonalAccount', on_delete=models.CASCADE)
-    review = models.ForeignKey(BusinessReview, on_delete=models.CASCADE)
+    user = models.ForeignKey('accounts.PersonalAccount', on_delete=models.CASCADE, related_name='reactions')
+    review = models.ForeignKey(BusinessReview, on_delete=models.CASCADE, related_name='reactions')
     helpful = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     
@@ -230,7 +320,7 @@ class ReviewHelpful(models.Model):
         unique_together = ('user', 'review')
         
     def __str__(self):
-        return f"{self.get_reaction_display()} reaction on {self.review}"
+        return f"{self.user.get_full_name()} reacted on {self.review}"
     
 # class Event(models.Model):
 #     business = models.ForeignKey(BusinessProfile, on_delete=models.CASCADE)
